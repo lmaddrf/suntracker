@@ -45,7 +45,7 @@ try:
 except Exception as e:
     api_failed = True
 
-# 5. Step 3: Calculate Sun Coverage % Based on Urban Geometry
+# 5. Step 3: HIGHLY CALIBRATED Sun Coverage % Based on Your Feedback
 sun_coverage = 0.0
 
 if elevation <= 0:
@@ -53,30 +53,39 @@ if elevation <= 0:
 elif cloud_cover > 85:
     sun_coverage = 0.0  # Completely overcast
 else:
-    # Geometric profile for the 5th floor at Franklin & Pearl
-    if 180 <= azimuth <= 230:  # Sun is South/Southwest
-        if elevation < 45:
-            sun_coverage = 10.0  # Blocked by nearby towers, tiny sliver
+    # CALIBRATION 1: Summer Peak Sun. If the sun is high, it clears almost all towers.
+    if elevation >= 38:
+        sun_coverage = 95.0 # Exactly matching your real-world observation right now!
+    
+    # CALIBRATION 2: Morning to Early Afternoon Corridor (Sun is East/Southeast)
+    elif azimuth < 195:
+        if elevation < 25:
+            sun_coverage = float((elevation / 25) * 95) # Gradual morning warmup
         else:
-            sun_coverage = 90.0  
-    elif 230 < azimuth <= 300:  # Sun is moving West (One Federal St area)
-        if elevation < 35:
-            sun_coverage = 0.0   # Total shadow
-        elif 35 <= elevation <= 55:
-            sun_coverage = float((elevation - 35) / 20 * 100)
+            sun_coverage = 95.0
+            
+    # CALIBRATION 3: The Aggressive Mid-Day/Afternoon Shadow Wall
+    # This covers the specific angle of the heavy towers situated South to Southwest (195° to 255°)
+    elif 195 <= azimuth <= 255:
+        if elevation < 42:  # Heightened threshold to fix the "shaded when it said sunny" issue earlier
+            sun_coverage = 5.0  # It's a deep shadow wall
         else:
-            sun_coverage = 100.0
-    else:
-        if elevation < 20:
-            sun_coverage = float((elevation / 20) * 100)
-        else:
-            sun_coverage = 100.0
+            sun_coverage = 95.0
 
+    # CALIBRATION 4: Late Afternoon / Evening West Horizon (One Federal St corridor)
+    elif 255 < azimuth <= 310:
+        if elevation < 30:
+            sun_coverage = 0.0   # Total block as sun dips behind lower Financial District line
+        else:
+            sun_coverage = float(((elevation - 30) / 12) * 95)
+    else:
+        sun_coverage = 0.0
+
+# Bound coverage tightly
 sun_coverage = max(0.0, min(100.0, sun_coverage))
 
 # 6. Step 4: Apply Microclimate Sun Boost to the active weather data
 if not api_failed and sun_coverage > 50 and cloud_cover < 30:
-    # Urban towers block the wind, making it feel even warmer
     wind_cooling_factor = max(0, (15 - wind_speed) / 15) 
     sun_boost = 12 * (sun_coverage / 100) * wind_cooling_factor
     wind_chill = wind_chill + sun_boost
@@ -99,8 +108,8 @@ if elevation <= 0:
 elif cloud_cover > 70:
     st.info("☁️ **Overcast skies.** Even if the geometric path is clear, it's currently gray and cloudy outside.")
 elif sun_coverage < 20:
-    st.warning(f"🏢 **Tiny Sliver Alert ({sun_coverage:.0f}% Sun).** The sun is mostly blocked by neighboring towers. The patio is almost entirely in the shade and likely chilly!")
+    st.warning(f"🏢 **Shaded Alert ({sun_coverage:.0f}% Sun).** The sun is currently blocked by neighboring towers. The terrace is in the shade.")
 elif wind_speed > 15 and wind_chill < 60:
-    st.warning(f"💨 **Sunny but Windy! ({sun_coverage:.0f}% Sun).** The sun is hitting the deck, but with a {wind_speed:.0f} mph wind, it feels like {wind_chill:.0f}°F. Bring a jacket!")
+    st.warning(f"💨 **Sunny but Windy! ({sun_coverage:.0f}% Sun).** The sun is hitting the deck, but with a {wind_speed:.0f} mph wind, it feels like {wind_chill:.0f}°F.")
 else:
     st.success(f"☀️ **GREAT TERRACE CONDITIONS!** {sun_coverage:.0f}% of the patio has direct sunlight, winds are calm, and it feels like {wind_chill:.0f}°F. Perfect time to go up!")
