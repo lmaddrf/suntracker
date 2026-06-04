@@ -21,14 +21,11 @@ html, body, [class*="css"] {
     background-color: #faf9f7;
     color: #1c1c1c;
 }
-
 .block-container {
     max-width: 720px;
     padding-top: 3rem;
     padding-bottom: 3rem;
 }
-
-/* ── Header ── */
 .header-eyebrow {
     font-size: 0.72rem;
     font-weight: 500;
@@ -51,8 +48,6 @@ html, body, [class*="css"] {
     font-weight: 400;
     margin-bottom: 2rem;
 }
-
-/* ── Sun Arc Visual ── */
 .sun-arc-container {
     background: linear-gradient(160deg, #fff8ed 0%, #ffefc9 100%);
     border-radius: 16px;
@@ -97,15 +92,12 @@ html, body, [class*="css"] {
 .sun-fill {
     height: 8px;
     border-radius: 999px;
-    background: linear-gradient(90deg, #f5a623, #ffde47);
 }
 .sun-meta {
     font-size: 0.78rem;
     color: #b07d2a;
     opacity: 0.8;
 }
-
-/* ── Metrics Grid ── */
 .metrics-grid {
     display: grid;
     grid-template-columns: 1fr 1fr 1fr;
@@ -138,8 +130,6 @@ html, body, [class*="css"] {
     font-size: 0.75rem;
     color: #bbb;
 }
-
-/* ── Chips ── */
 .chips-row {
     display: flex;
     flex-wrap: wrap;
@@ -155,8 +145,6 @@ html, body, [class*="css"] {
     padding: 0.28rem 0.85rem;
     font-weight: 400;
 }
-
-/* ── Verdict ── */
 .verdict-box {
     border-radius: 14px;
     padding: 1.3rem 1.6rem;
@@ -184,8 +172,6 @@ html, body, [class*="css"] {
     color: #2a2a6a;
 }
 .verdict-bold { font-weight: 700; }
-
-/* ── Warning ── */
 .api-warn {
     font-size: 0.8rem;
     color: #9a6f00;
@@ -195,9 +181,6 @@ html, body, [class*="css"] {
     padding: 0.5rem 1rem;
     margin-bottom: 1.2rem;
 }
-
-/* ── Divider ── */
-hr.div { border: none; border-top: 1px solid #eee; margin: 1.5rem 0; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -221,165 +204,47 @@ solpos    = solarposition.get_solarposition(pd.Timestamp(now_boston), LAT, LON)
 elevation = float(solpos['apparent_elevation'].iloc[0])
 azimuth   = float(solpos['azimuth'].iloc[0])
 
-# ─── Weather Fetch ───────────────────────────────────────────────────────────────
-# Primary: National Weather Service (US Gov, no key, very reliable)
-# Fallback: Open-Meteo
+# ─── Weather Fetch (Open-Meteo) ──────────────────────────────────────────────────
 debug_info = {}
 api_ok = False
 
-HEADERS = {"User-Agent": "225FranklinSunTracker/1.0 (facilities@recordedfuture.com)"}
+weather_url = (
+    "https://api.open-meteo.com/v1/forecast"
+    f"?latitude={LAT}&longitude={LON}"
+    "&current=temperature_2m,apparent_temperature,relative_humidity_2m,"
+    "cloud_cover,wind_speed_10m,wind_gusts_10m,direct_radiation,"
+    "weather_code,precipitation,uv_index"
+    "&temperature_unit=fahrenheit"
+    "&wind_speed_unit=mph"
+    "&timezone=America%2FNew_York"
+)
 
-def fetch_nws():
-    """Two-step NWS fetch: points → station observation."""
-    # Step 1: get grid info for our coordinates
-    pts = requests.get(
-        f"https://api.weather.gov/points/{LAT},{LON}",
-        headers=HEADERS, timeout=6, verify=False
-    ).json()
-    obs_url = pts['properties']['observationStations']
-
-    # Step 2: get nearest station
-    stations = requests.get(obs_url, headers=HEADERS, timeout=6, verify=False).json()
-    station_id = stations['features'][0]['properties']['stationIdentifier']
-
-    # Step 3: latest observation
-    obs = requests.get(
-        f"https://api.weather.gov/stations/{station_id}/observations/latest",
-        headers=HEADERS, timeout=6, verify=False
-    ).json()
-    p = obs['properties']
-
-    # NWS returns SI units — convert to °F and mph
-    temp_c        = p['temperature']['value']
-    dewpoint_c    = p['dewpoint']['value']
-    wind_ms       = p['windSpeed']['value'] or 0
-    wind_gust_ms  = p['windGust']['value'] if p['windGust']['value'] else None
-    humidity_val  = p['relativeHumidity']['value'] or 50
-    precip_m      = p.get('precipitationLastHour', {}).get('value') or 0
-    description   = p.get('textDescription', 'Unknown')
-
-    air_t  = temp_c * 9/5 + 32
-    wind_s = wind_ms  # NWS returns mph for KBOS
-    wind_g = wind_gust_ms if wind_gust_ms else wind_s    
-    precip = (precip_m or 0) * 1000  # m → mm
-
-    # Heat index / wind chill (simple approximations)
-    if air_t >= 80:
-        hi = (-42.379 + 2.04901523*air_t + 10.14333127*humidity_val
-              - 0.22475541*air_t*humidity_val - 0.00683783*air_t**2
-              - 0.05481717*humidity_val**2 + 0.00122874*air_t**2*humidity_val
-              + 0.00085282*air_t*humidity_val**2 - 0.00000199*air_t**2*humidity_val**2)
-        feels = hi
-    elif air_t <= 50 and wind_s > 3:
-        wc = (35.74 + 0.6215*air_t - 35.75*(wind_s**0.16) + 0.4275*air_t*(wind_s**0.16))
-        feels = wc
-    else:
-        feels = air_t
-
-    # Map NWS description to cloud cover estimate
-    desc_lower = description.lower()
-    if 'clear' in desc_lower or 'sunny' in desc_lower:
-        clouds = 5
-    elif 'mostly clear' in desc_lower or 'mostly sunny' in desc_lower:
-        clouds = 20
-    elif 'partly' in desc_lower:
-        clouds = 45
-    elif 'mostly cloudy' in desc_lower:
-        clouds = 75
-    elif 'overcast' in desc_lower or 'cloudy' in desc_lower:
-        clouds = 95
-    else:
-        clouds = 40
-
-    return {
-        'air_temp': air_t, 'feels_like': feels, 'humidity': humidity_val,
-        'cloud_cover': clouds, 'wind_speed': wind_s, 'wind_gusts': wind_g,
-        'precipitation': precip, 'description': description,
-        'station': station_id
-    }
-
-def fetch_openmeteo():
-    """Fallback: Open-Meteo."""
-    url = (
-        "https://api.open-meteo.com/v1/forecast"
-        f"?latitude={LAT}&longitude={LON}"
-        "&current=temperature_2m,apparent_temperature,relative_humidity_2m,"
-        "cloud_cover,wind_speed_10m,wind_gusts_10m,direct_radiation,"
-        "weather_code,precipitation"
-        "&temperature_unit=fahrenheit&wind_speed_unit=mph"
-        "&timezone=America%2FNew_York"
-    )
-    r = requests.get(url, timeout=6, verify=False)
-    if r.status_code != 200:
-        raise ValueError(f"HTTP {r.status_code}")
-    cur = r.json()['current']
-    WMO = {0:"Clear sky",1:"Mainly clear",2:"Partly cloudy",3:"Overcast",
-           61:"Light rain",63:"Rain",65:"Heavy rain",71:"Light snow",
-           80:"Light showers",81:"Showers",95:"Thunderstorm"}
-    return {
-        'air_temp': cur['temperature_2m'],
-        'feels_like': cur['apparent_temperature'],
-        'humidity': cur['relative_humidity_2m'],
-        'cloud_cover': cur['cloud_cover'],
-        'wind_speed': cur['wind_speed_10m'],
-        'wind_gusts': cur['wind_gusts_10m'],
-        'precipitation': cur.get('precipitation', 0),
-        'description': WMO.get(cur.get('weather_code', 0), 'Unknown'),
-        'direct_rad': cur.get('direct_radiation', 0),
-    }
-# ─── UV Index ────────────────────────────────────────────────────────────────
-def fetch_uv():
-    url = (
-        "https://api.open-meteo.com/v1/forecast"
-        f"?latitude={LAT}&longitude={LON}"
-        "&current=uv_index"
-        "&timezone=America%2FNew_York"
-    )
-    r = requests.get(url, timeout=6, verify=False)
-    if r.status_code == 200:
-        return r.json()['current']['uv_index']
-    return None
-
-uv_index = fetch_uv()
-
-# Try NWS first, fall back to Open-Meteo, then hardcoded defaults
-direct_rad = None
-weather_source = None
 try:
-    result = fetch_nws()
-    api_ok = True
-    weather_source = f"NWS · {result['station']}"
-    debug_info['source'] = weather_source
-    debug_info['raw'] = result
-except Exception as e1:
-    debug_info['nws_error'] = str(e1)
-    try:
-        result = fetch_openmeteo()
+    r = requests.get(weather_url, timeout=8, verify=False)
+    debug_info['http_status'] = r.status_code
+    if r.status_code == 200:
+        cur = r.json()['current']
+        air_temp        = cur['temperature_2m']
+        feels_like      = cur['apparent_temperature']
+        humidity        = cur['relative_humidity_2m']
+        cloud_cover     = cur['cloud_cover']
+        wind_speed      = cur['wind_speed_10m']
+        wind_gusts      = cur['wind_gusts_10m']
+        direct_rad      = cur.get('direct_radiation', 0)
+        weather_code    = cur.get('weather_code', 0)
+        precipitation   = cur.get('precipitation', 0)
+        uv_index        = cur.get('uv_index', None)
+        condition_label = WMO_CODES.get(weather_code, "—")
         api_ok = True
-        weather_source = "Open-Meteo (fallback)"
-        direct_rad = result.get('direct_rad', 0)
-        debug_info['source'] = weather_source
-        debug_info['raw'] = result
-    except Exception as e2:
-        debug_info['openmeteo_error'] = str(e2)
-        result = None
-
-if result:
-    air_temp      = result['air_temp']
-    feels_like    = result['feels_like']
-    humidity      = result['humidity']
-    cloud_cover   = result['cloud_cover']
-    wind_speed    = result['wind_speed']
-    wind_gusts    = result['wind_gusts']
-    precipitation = result['precipitation']
-    condition_label = result['description']
-    if direct_rad is None:
-        # Estimate radiation from cloud cover when NWS is source
-        direct_rad = max(0, (1 - cloud_cover / 100) * 800 * max(0, elevation / 90))
-else:
+        debug_info['raw'] = {k: cur[k] for k in cur}
+    else:
+        raise ValueError(f"HTTP {r.status_code}")
+except Exception as e:
+    debug_info['exception'] = str(e)
     air_temp, feels_like, humidity = 68.0, 66.0, 55
     cloud_cover, wind_speed, wind_gusts = 25, 8.0, 12.0
     direct_rad, precipitation = 350, 0
+    weather_code, uv_index = 1, None
     condition_label = "Unknown"
 
 # ─── Sun Coverage ────────────────────────────────────────────────────────────────
@@ -395,7 +260,7 @@ else:
         geo = 1.0 if elevation >= 15 else elevation / 15
     sun_coverage = max(0.0, min(100.0, rad_pct * geo))
 
-# ─── Feels Like ──────────────────────────────────────────────────────────────────
+# ─── Feels Like (API + small radiant boost) ──────────────────────────────────────
 display_feels = feels_like
 if sun_coverage > 60 and direct_rad > 400 and wind_speed < 12 and cloud_cover < 30:
     boost = 5.0 * (sun_coverage / 100.0) * max(0.0, (12 - wind_speed) / 12)
@@ -422,7 +287,6 @@ def get_verdict(elev, sun, wind, feels, clouds, precip):
 level, icon, bold_text, detail_text = get_verdict(
     elevation, sun_coverage, wind_speed, display_feels, cloud_cover, precipitation
 )
-
 
 # ─── Render ──────────────────────────────────────────────────────────────────────
 st.markdown('<div class="header-eyebrow">225 Franklin St · Boston, MA</div>', unsafe_allow_html=True)
@@ -474,14 +338,16 @@ st.markdown(f"""
 
 # Detail chips
 chips = [
-    f"💧 {humidity}% humidity",
+    f"💧 {humidity:.0f}% humidity",
     f"☁️ {cloud_cover}% cloud cover",
     f"{condition_label}",
-    f"🕶️ UV: {uv_index:.0f}" if uv_index is not None else "🕶️ UV unavailable",
-    f"📡 {weather_source or 'Fallback data'}",
 ]
+if uv_index is not None:
+    chips.append(f"🕶️ UV: {uv_index:.0f}")
 if precipitation > 0:
     chips.append(f"🌧 {precipitation:.1f} mm precip")
+chips.append("📡 Open-Meteo" if api_ok else "📡 Fallback data")
+
 chips_html = "".join(f'<span class="chip">{c}</span>' for c in chips)
 st.markdown(f'<div class="chips-row">{chips_html}</div>', unsafe_allow_html=True)
 
