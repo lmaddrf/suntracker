@@ -1,3 +1,6 @@
+streamlit
 pvlib
-pytz
+pandas
 requests
+pytz
+streamlit-autorefresh
