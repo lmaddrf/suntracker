@@ -14,7 +14,7 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=DM+Sans:wght@300;400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
 html, body, [class*="css"] {
     font-family: 'DM Sans', sans-serif;
@@ -35,7 +35,7 @@ html, body, [class*="css"] {
     margin-bottom: 0.5rem;
 }
 .header-title {
-    font-family: 'Playfair Display', serif;
+    font-family: 'Inter', sans-serif;
     font-size: 3rem;
     font-weight: 700;
     line-height: 1.1;
@@ -74,7 +74,7 @@ html, body, [class*="css"] {
     margin-bottom: 0.5rem;
 }
 .sun-pct-value {
-    font-family: 'Playfair Display', serif;
+    font-family: 'Inter', sans-serif;
     font-size: 4.5rem;
     font-weight: 700;
     color: #c47d00;
@@ -119,7 +119,7 @@ html, body, [class*="css"] {
     margin-bottom: 0.5rem;
 }
 .metric-card-value {
-    font-family: 'Playfair Display', serif;
+    font-family: 'Inter', sans-serif;
     font-size: 2.4rem;
     font-weight: 700;
     color: #1c1c1c;
