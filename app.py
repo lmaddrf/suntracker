@@ -327,6 +327,20 @@ def fetch_openmeteo():
         'description': WMO.get(cur.get('weather_code', 0), 'Unknown'),
         'direct_rad': cur.get('direct_radiation', 0),
     }
+# ─── UV Index ────────────────────────────────────────────────────────────────
+def fetch_uv():
+    url = (
+        "https://api.open-meteo.com/v1/forecast"
+        f"?latitude={LAT}&longitude={LON}"
+        "&current=uv_index"
+        "&timezone=America%2FNew_York"
+    )
+    r = requests.get(url, timeout=6, verify=False)
+    if r.status_code == 200:
+        return r.json()['current']['uv_index']
+    return None
+
+uv_index = fetch_uv()
 
 # Try NWS first, fall back to Open-Meteo, then hardcoded defaults
 direct_rad = None
@@ -463,6 +477,7 @@ chips = [
     f"💧 {humidity}% humidity",
     f"☁️ {cloud_cover}% cloud cover",
     f"{condition_label}",
+    f"🕶️ UV: {uv_index:.0f}" if uv_index is not None else "🕶️ UV unavailable",
     f"📡 {weather_source or 'Fallback data'}",
 ]
 if precipitation > 0:
