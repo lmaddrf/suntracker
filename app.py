@@ -259,8 +259,8 @@ def fetch_nws():
     description   = p.get('textDescription', 'Unknown')
 
     air_t  = temp_c * 9/5 + 32
-    wind_s = wind_ms * 2.237
-    wind_g = wind_gust_ms * 2.237 if wind_gust_ms else wind_s
+    wind_s = wind_ms  # NWS returns mph for KBOS
+    wind_g = wind_gust_ms if wind_gust_ms else wind_s    
     precip = (precip_m or 0) * 1000  # m → mm
 
     # Heat index / wind chill (simple approximations)
