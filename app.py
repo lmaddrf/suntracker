@@ -283,6 +283,8 @@ def get_verdict(elev, sun, wind, feels, clouds, precip):
     if sun >= 60 and feels >= 60:
         return "great","☀️", "GREAT TERRACE CONDITIONS!", f"{sun:.0f}% of the patio has direct sunlight, winds are calm, and it feels like {feels:.0f}°F. Perfect time to go up!"
     return "ok", "🌤", "Decent conditions.", f"Partial sun ({sun:.0f}%), feels like {feels:.0f}°F."
+    if feels > 88:
+        return "bad",  "🥵", "Too hot.", f"Feels like {feels:.0f}°F — it's a scorcher up there. Stay inside."
 
 level, icon, bold_text, detail_text = get_verdict(
     elevation, sun_coverage, wind_speed, display_feels, cloud_cover, precipitation
