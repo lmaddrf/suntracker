@@ -253,14 +253,14 @@ def fetch_nws():
     temp_c        = p['temperature']['value']
     dewpoint_c    = p['dewpoint']['value']
     wind_ms       = p['windSpeed']['value'] or 0
-    wind_gust_ms  = p['windGust']['value'] or wind_ms
+    wind_gust_ms  = p['windGust']['value'] if p['windGust']['value'] else None
     humidity_val  = p['relativeHumidity']['value'] or 50
     precip_m      = p.get('precipitationLastHour', {}).get('value') or 0
     description   = p.get('textDescription', 'Unknown')
 
     air_t  = temp_c * 9/5 + 32
     wind_s = wind_ms * 2.237
-    wind_g = wind_gust_ms * 2.237
+    wind_g = wind_gust_ms * 2.237 if wind_gust_ms else wind_s
     precip = (precip_m or 0) * 1000  # m → mm
 
     # Heat index / wind chill (simple approximations)
