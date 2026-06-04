@@ -25,15 +25,19 @@ azimuth = float(solpos['azimuth'].iloc[0])
 # 4. Step 2: Fetch Live Weather from Downtown Grid (Open-Meteo API)
 weather_url = f"https://api.open-meteo.com/v1/forecast?latitude={LAT}&longitude={LON}&current=temperature_2m,apparent_temperature,cloud_cover,wind_speed_10m&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=America%2FNew_York"
 
-# Initialize variables with realistic defaults in case API fails
-cloud_cover = 0
-air_temp = 80.0
-wind_speed = 5.0
-wind_chill = 82.0
+# Safer morning-appropriate defaults in case the API completely drops out
+cloud_cover = 20
+air_temp = 62.0
+wind_speed = 8.0
+wind_chill = 60.0
 api_failed = False
 
 try:
-    weather_response = requests.get(weather_url).json()
+    # Adding headers ensures the API server doesn't block our script
+    headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'}
+    response = requests.get(weather_url, headers=headers, timeout=5)
+    weather_response = response.json()
+    
     if 'current' in weather_response:
         current_data = weather_response['current']
         cloud_cover = current_data['cloud_cover']
@@ -45,7 +49,7 @@ try:
 except Exception as e:
     api_failed = True
 
-# 5. Step 3: HIGHLY CALIBRATED Sun Coverage % Based on Your Feedback
+# 5. Step 3: HIGHLY CALIBRATED Sun Coverage % Based on Urban Geometry
 sun_coverage = 0.0
 
 if elevation <= 0:
@@ -53,29 +57,37 @@ if elevation <= 0:
 elif cloud_cover > 85:
     sun_coverage = 0.0  # Completely overcast
 else:
-    # CALIBRATION 1: Summer Peak Sun. If the sun is high, it clears almost all towers.
-    if elevation >= 38:
-        sun_coverage = 95.0 # Exactly matching your real-world observation right now!
-    
-    # CALIBRATION 2: Morning to Early Afternoon Corridor (Sun is East/Southeast)
-    elif azimuth < 195:
-        if elevation < 25:
-            sun_coverage = float((elevation / 25) * 95) # Gradual morning warmup
+    # CALIBRATION 1: Early Morning Shade (Sun is low in the East/Southeast)
+    # At 8:40 AM, Azimuth is roughly 95°-105° and Elevation is around 35°-40°
+    # The towers to the East completely block the 5th floor terrace early on.
+    if azimuth < 120:
+        if elevation < 45: 
+            sun_coverage = 0.0  # Deep morning shadow from eastern towers
+        else:
+            sun_coverage = 50.0
+            
+    # CALIBRATION 2: Late Morning / Mid-Day Transition (Approaching Post Office Sq Corridor)
+    elif 120 <= azimuth < 195:
+        if elevation < 35:
+            sun_coverage = float((elevation / 35) * 95)
         else:
             sun_coverage = 95.0
             
-    # CALIBRATION 3: The Aggressive Mid-Day/Afternoon Shadow Wall
-    # This covers the specific angle of the heavy towers situated South to Southwest (195° to 255°)
+    # CALIBRATION 3: Summer Peak Sun (High overhead, clears almost all structures)
+    elif elevation >= 45:
+        sun_coverage = 95.0 
+            
+    # CALIBRATION 4: The Aggressive Afternoon Shadow Wall (South to Southwest Towers)
     elif 195 <= azimuth <= 255:
-        if elevation < 42:  # Heightened threshold to fix the "shaded when it said sunny" issue earlier
-            sun_coverage = 5.0  # It's a deep shadow wall
+        if elevation < 42:  
+            sun_coverage = 5.0  # Deep afternoon shadow wall
         else:
             sun_coverage = 95.0
 
-    # CALIBRATION 4: Late Afternoon / Evening West Horizon (One Federal St corridor)
+    # CALIBRATION 5: Late Afternoon / Evening West Horizon (One Federal St corridor)
     elif 255 < azimuth <= 310:
         if elevation < 30:
-            sun_coverage = 0.0   # Total block as sun dips behind lower Financial District line
+            sun_coverage = 0.0   
         else:
             sun_coverage = float(((elevation - 30) / 12) * 95)
     else:
@@ -98,7 +110,7 @@ col2.metric("Wind Speed", f"{wind_speed:.1f} mph")
 col3.metric("Wind Chill / Feels Like", f"{wind_chill:.0f}°F")
 
 if api_failed:
-    st.caption("⚠️ Note: Live data stream interrupted. Displaying calibrated historical baseline values.")
+    st.caption("⚠️ Note: Live data stream interrupted. Displaying calibrated morning baseline values.")
 
 st.markdown("---")
 
@@ -108,8 +120,8 @@ if elevation <= 0:
 elif cloud_cover > 70:
     st.info("☁️ **Overcast skies.** Even if the geometric path is clear, it's currently gray and cloudy outside.")
 elif sun_coverage < 20:
-    st.warning(f"🏢 **Shaded Alert ({sun_coverage:.0f}% Sun).** The sun is currently blocked by neighboring towers. The terrace is in the shade.")
+    st.warning(f"🏢 **Shaded Alert ({sun_coverage:.0f}% Sun).** The sun is currently blocked by neighboring towers. The terrace is entirely in the shade and likely cool!")
 elif wind_speed > 15 and wind_chill < 60:
-    st.warning(f"💨 **Sunny but Windy! ({sun_coverage:.0f}% Sun).** The sun is hitting the deck, but with a {wind_speed:.0f} mph wind, it feels like {wind_chill:.0f}°F.")
+    st.warning(f"💨 **Sunny but Windy! ({sun_coverage:.0f}% Sun).** The sun is hitting the deck, but it feels like {wind_chill:.0f}°F.")
 else:
     st.success(f"☀️ **GREAT TERRACE CONDITIONS!** {sun_coverage:.0f}% of the patio has direct sunlight, winds are calm, and it feels like {wind_chill:.0f}°F. Perfect time to go up!")
