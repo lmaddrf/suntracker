@@ -278,13 +278,13 @@ def get_verdict(elev, sun, wind, feels, clouds, precip):
         return "bad",  "🏢", "Mostly in shadow.", f"Only {sun:.0f}% sun — neighboring towers are blocking the light."
     if feels < 45:
         return "bad",  "🥶", "Sunny but too cold.", f"Feels like {feels:.0f}°F — not terrace weather."
+    if feels > 88:
+        return "bad",  "🥵", "Too hot.", f"Feels like {feels:.0f}°F — it's a scorcher up there. Stay inside."
     if wind > 18 and feels < 60:
         return "ok",   "💨", "Sunny but windy.", f"{wind:.0f} mph winds — feels like {feels:.0f}°F. Bring a layer."
     if sun >= 60 and feels >= 60:
         return "great","☀️", "GREAT TERRACE CONDITIONS!", f"{sun:.0f}% of the patio has direct sunlight, winds are calm, and it feels like {feels:.0f}°F. Perfect time to go up!"
     return "ok", "🌤", "Decent conditions.", f"Partial sun ({sun:.0f}%), feels like {feels:.0f}°F."
-    if feels > 88:
-        return "bad",  "🥵", "Too hot.", f"Feels like {feels:.0f}°F — it's a scorcher up there. Stay inside."
 
 level, icon, bold_text, detail_text = get_verdict(
     elevation, sun_coverage, wind_speed, display_feels, cloud_cover, precipitation
