@@ -260,7 +260,7 @@ daylight_str = (
 debug_info = {}
 api_ok = False
 
-API_KEY = st.secrets.get("WEATHERAPI_KEY", "931c4442037a4279a4e161039260506")
+API_KEY = st.secrets["WEATHERAPI_KEY"]
 
 @st.cache_data(ttl=600)
 def fetch_weather(api_key):
