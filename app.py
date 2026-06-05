@@ -225,26 +225,6 @@ html, body, [class*="css"] {
 LAT, LON = 42.3556, -71.0565
 BOSTON_TZ = pytz.timezone('America/New_York')
 
-WMO_CODES = {
-    0: "Clear sky", 1: "Mainly clear", 2: "Partly cloudy", 3: "Overcast",
-    45: "Fog", 48: "Icing fog",
-    51: "Light drizzle", 53: "Drizzle", 55: "Heavy drizzle",
-    61: "Light rain", 63: "Rain", 65: "Heavy rain",
-    71: "Light snow", 73: "Snow", 75: "Heavy snow",
-    80: "Light showers", 81: "Showers", 82: "Heavy showers",
-    95: "Thunderstorm", 96: "Thunderstorm w/ hail", 99: "Thunderstorm w/ heavy hail",
-}
-
-WMO_EMOJI = {
-    0: "☀️", 1: "🌤", 2: "⛅", 3: "☁️",
-    45: "🌫", 48: "🌫",
-    51: "🌦", 53: "🌦", 55: "🌧",
-    61: "🌧", 63: "🌧", 65: "🌧",
-    71: "🌨", 73: "❄️", 75: "❄️",
-    80: "🌦", 81: "🌧", 82: "⛈",
-    95: "⛈", 96: "⛈", 99: "⛈",
-}
-
 # ─── Time & Solar ────────────────────────────────────────────────────────────────
 now_boston = datetime.now(BOSTON_TZ)
 today      = now_boston.date()
@@ -268,86 +248,117 @@ def get_sun_times(date):
     return sunrise, sunset
 
 sunrise_today, sunset_today = get_sun_times(today)
-sunrise_str = sunrise_today.strftime("%-I:%M %p") if sunrise_today else "—"
-sunset_str  = sunset_today.strftime("%-I:%M %p")  if sunset_today  else "—"
+sunrise_str  = sunrise_today.strftime("%-I:%M %p") if sunrise_today else "—"
+sunset_str   = sunset_today.strftime("%-I:%M %p")  if sunset_today  else "—"
 daylight_str = (
     f"{int((sunset_today - sunrise_today).seconds // 3600)}h "
     f"{int((sunset_today - sunrise_today).seconds % 3600 // 60)}m"
     if sunrise_today and sunset_today else "—"
 )
 
-# ─── Weather Fetch ────────────────────────────────────────────────────────────────
+# ─── Weather Fetch (WeatherAPI.com) ──────────────────────────────────────────────
 debug_info = {}
 api_ok = False
 
-WEATHER_URL = (
-    "https://api.open-meteo.com/v1/forecast"
-    f"?latitude={LAT}&longitude={LON}"
-    "&current=temperature_2m,apparent_temperature,relative_humidity_2m,"
-    "cloud_cover,wind_speed_10m,wind_gusts_10m,direct_radiation,"
-    "weather_code,precipitation,uv_index"
-    "&hourly=apparent_temperature,wind_speed_10m,cloud_cover,direct_radiation,precipitation_probability"
-    "&daily=temperature_2m_max,apparent_temperature_max,weather_code,"
-    "wind_speed_10m_max,precipitation_probability_max"
-    "&temperature_unit=fahrenheit"
-    "&wind_speed_unit=mph"
-    "&timezone=America%2FNew_York"
-    "&forecast_days=2"
-)
+API_KEY = st.secrets.get("WEATHERAPI_KEY", "931c4442037a4279a4e161039260506")
 
 @st.cache_data(ttl=600)
-def fetch_weather(url):
-    r = requests.get(url, timeout=8, verify=False)
-    if r.status_code == 429:
-        raise ValueError("Rate limited (429) — try again in a few minutes.")
+def fetch_weather(api_key):
+    # Current conditions
+    current_url = (
+        f"https://api.weatherapi.com/v1/current.json"
+        f"?key={api_key}&q={LAT},{LON}&aqi=no"
+    )
+    # Forecast (2 days for tomorrow)
+    forecast_url = (
+        f"https://api.weatherapi.com/v1/forecast.json"
+        f"?key={api_key}&q={LAT},{LON}&days=2&aqi=no&alerts=no"
+    )
+    r = requests.get(forecast_url, timeout=8)
     if r.status_code != 200:
-        raise ValueError(f"HTTP {r.status_code}")
+        raise ValueError(f"HTTP {r.status_code}: {r.text[:200]}")
     return r.json()
 
 try:
-    data = fetch_weather(WEATHER_URL)
+    data = fetch_weather(API_KEY)
     cur  = data['current']
+    loc  = data['location']
 
-    air_temp        = cur['temperature_2m']
-    feels_like      = cur['apparent_temperature']
-    humidity        = cur['relative_humidity_2m']
-    cloud_cover     = cur['cloud_cover']
-    wind_speed      = cur['wind_speed_10m']
-    wind_gusts      = cur['wind_gusts_10m']
-    direct_rad      = cur.get('direct_radiation', 0)
-    weather_code    = cur.get('weather_code', 0)
-    precipitation   = cur.get('precipitation', 0)
-    uv_index        = cur.get('uv_index', None)
-    condition_label = WMO_CODES.get(weather_code, "—")
+    air_temp        = cur['temp_f']
+    feels_like      = cur['feelslike_f']
+    humidity        = cur['humidity']
+    cloud_cover     = cur['cloud']
+    wind_speed      = cur['wind_mph']
+    wind_gusts      = cur['gust_mph']
+    direct_rad      = cur.get('solar_w_per_m2', cur.get('vis_miles', 0) * 50)
+    uv_index        = cur.get('uv', None)
+    precipitation   = cur.get('precip_mm', 0)
+    condition_label = cur['condition']['text']
+    condition_code  = cur['condition']['code']
     api_ok = True
     debug_info['http_status'] = 200
-    debug_info['raw'] = {k: cur[k] for k in cur}
+    debug_info['raw'] = {
+        'air_temp': air_temp, 'feels_like': feels_like,
+        'humidity': humidity, 'cloud_cover': cloud_cover,
+        'wind_speed': wind_speed, 'wind_gusts': wind_gusts,
+        'uv_index': uv_index, 'precipitation': precipitation,
+        'condition': condition_label,
+    }
 
-    hourly     = data.get('hourly', {})
-    h_times    = hourly.get('time', [])
-    h_feels    = hourly.get('apparent_temperature', [])
-    h_wind     = hourly.get('wind_speed_10m', [])
-    h_clouds   = hourly.get('cloud_cover', [])
-    h_rad      = hourly.get('direct_radiation', [])
-    h_precip_p = hourly.get('precipitation_probability', [])
+    # Hourly data for today
+    forecast_days = data.get('forecast', {}).get('forecastday', [])
+    today_fc  = forecast_days[0] if len(forecast_days) > 0 else None
+    tomorrow_fc = forecast_days[1] if len(forecast_days) > 1 else None
 
-    daily       = data.get('daily', {})
-    d_dates     = daily.get('time', [])
-    d_max_temp  = daily.get('temperature_2m_max', [])
-    d_feels_max = daily.get('apparent_temperature_max', [])
-    d_wcode     = daily.get('weather_code', [])
-    d_wind_max  = daily.get('wind_speed_10m_max', [])
-    d_precip_p  = daily.get('precipitation_probability_max', [])
+    today_hourly = today_fc['hour'] if today_fc else []
+    h_times    = [h['time'] for h in today_hourly]
+    h_feels    = [h['feelslike_f'] for h in today_hourly]
+    h_wind     = [h['wind_mph'] for h in today_hourly]
+    h_clouds   = [h['cloud'] for h in today_hourly]
+    h_rad      = [h.get('solar_w_per_m2', (100 - h['cloud']) * 6) for h in today_hourly]
+    h_precip_p = [h.get('chance_of_rain', 0) for h in today_hourly]
+
+    # Tomorrow
+    if tomorrow_fc:
+        td = tomorrow_fc['day']
+        tmr_temp     = td['maxtemp_f']
+        tmr_feels    = td['avgtemp_f']
+        tmr_wind     = td['maxwind_mph']
+        tmr_condition = td['condition']['text']
+        tmr_condition_code = td['condition']['code']
+        tmr_precip_p = td.get('daily_chance_of_rain', 0)
+    else:
+        tmr_temp = tmr_feels = tmr_wind = tmr_condition = tmr_precip_p = None
+        tmr_condition_code = 1000
 
 except Exception as e:
     debug_info['exception'] = str(e)
     air_temp, feels_like, humidity = 68.0, 66.0, 55
     cloud_cover, wind_speed, wind_gusts = 25, 8.0, 12.0
     direct_rad, precipitation = 350, 0
-    weather_code, uv_index = 1, None
+    uv_index = None
     condition_label = "Unknown"
     h_times = h_feels = h_wind = h_clouds = h_rad = h_precip_p = []
-    d_dates = d_max_temp = d_feels_max = d_wcode = d_wind_max = d_precip_p = []
+    tmr_temp = tmr_feels = tmr_wind = tmr_condition = tmr_precip_p = None
+    tmr_condition_code = 1000
+
+# ─── WeatherAPI condition code → emoji ───────────────────────────────────────────
+def condition_emoji(code):
+    sunny   = {1000}
+    pcloudy = {1003}
+    cloudy  = {1006, 1009}
+    fog     = {1030, 1135, 1147}
+    rain    = {1063,1072,1150,1153,1168,1171,1180,1183,1186,1189,1192,1195,1198,1201,1240,1243,1246}
+    snow    = {1066,1069,1114,1117,1204,1207,1210,1213,1216,1219,1222,1225,1255,1258}
+    thunder = {1087,1273,1276,1279,1282}
+    if code in sunny:   return "☀️"
+    if code in pcloudy: return "⛅"
+    if code in cloudy:  return "☁️"
+    if code in fog:     return "🌫"
+    if code in rain:    return "🌧"
+    if code in snow:    return "❄️"
+    if code in thunder: return "⛈"
+    return "🌤"
 
 # ─── Sun Coverage ────────────────────────────────────────────────────────────────
 def calc_sun_coverage(elev, az, rad):
@@ -386,10 +397,8 @@ now_hour = now_boston.replace(minute=0, second=0, microsecond=0)
 
 for i, t_str in enumerate(h_times):
     try:
-        t = BOSTON_TZ.localize(datetime.strptime(t_str, "%Y-%m-%dT%H:%M"))
+        t = BOSTON_TZ.localize(datetime.strptime(t_str, "%Y-%m-%d %H:%M"))
     except:
-        continue
-    if t.date() != today:
         continue
     if t < now_hour:
         continue
@@ -414,19 +423,8 @@ for j in range(len(today_hours) - 1):
         best_window_score = combined
         best_window_start = today_hours[j]['time']
 
-# ─── Tomorrow summary ────────────────────────────────────────────────────────────
-tmr_temp = tmr_feels = tmr_wind = tmr_wcode = tmr_precip_p = None
-tmr_str = tomorrow.strftime("%Y-%m-%d")
-for i, d in enumerate(d_dates):
-    if d == tmr_str:
-        tmr_temp     = d_max_temp[i]  if i < len(d_max_temp)  else None
-        tmr_feels    = d_feels_max[i] if i < len(d_feels_max) else None
-        tmr_wind     = d_wind_max[i]  if i < len(d_wind_max)  else None
-        tmr_wcode    = d_wcode[i]     if i < len(d_wcode)     else 0
-        tmr_precip_p = d_precip_p[i]  if i < len(d_precip_p)  else 0
-        break
-
-def tomorrow_verdict(feels, wind, wcode, precip_p):
+# ─── Tomorrow verdict ────────────────────────────────────────────────────────────
+def tomorrow_verdict(feels, wind, condition, precip_p):
     if feels is None:
         return "No forecast available."
     if precip_p and precip_p > 50:
@@ -437,9 +435,7 @@ def tomorrow_verdict(feels, wind, wcode, precip_p):
         return f"Feels like {feels:.0f}°F — too cold."
     if wind and wind > 20:
         return f"Windy day ({wind:.0f} mph max) — breezy up top."
-    wemo = WMO_EMOJI.get(wcode, "🌤")
-    wlbl = WMO_CODES.get(wcode, "")
-    return f"{wemo} {wlbl} · Feels like {feels:.0f}°F · Looks good."
+    return f"Looks good — feels like {feels:.0f}°F."
 
 # ─── Verdict ─────────────────────────────────────────────────────────────────────
 def get_verdict(elev, sun, wind, feels, clouds, precip):
@@ -526,7 +522,7 @@ if uv_index is not None:
     chips.append(f"🕶️ UV: {uv_index:.0f}")
 if precipitation > 0:
     chips.append(f"🌧 {precipitation:.1f} mm precip")
-chips.append("📡 Open-Meteo" if api_ok else "📡 Fallback data")
+chips.append("📡 WeatherAPI" if api_ok else "📡 Fallback data")
 chips_html = "".join(f'<span class="chip">{c}</span>' for c in chips)
 st.markdown(f'<div class="chips-row">{chips_html}</div>', unsafe_allow_html=True)
 
@@ -563,11 +559,11 @@ if today_hours:
 
     bars_html = ""
     for h in today_hours:
-        pct      = int((h['score'] / max_score) * 100)
-        is_best  = best_window_start and h['time'] == best_window_start
-        bar_bg   = "#f5a623" if h['score'] > 60 else ("#c8d8e8" if h['score'] > 20 else "#ebebeb")
-        lbl_cls  = "hour-label-bold" if is_best else "hour-label"
-        label    = h['time'].strftime("%-I%p").lower()
+        pct     = int((h['score'] / max_score) * 100)
+        is_best = best_window_start and h['time'] == best_window_start
+        bar_bg  = "#f5a623" if h['score'] > 60 else ("#c8d8e8" if h['score'] > 20 else "#ebebeb")
+        lbl_cls = "hour-label-bold" if is_best else "hour-label"
+        label   = h['time'].strftime("%-I%p").lower()
         bars_html += f"""
         <div class="hour-bar-wrap">
             <div class="hour-bar" style="height:{max(4, pct // 2)}px; background:{bar_bg};"></div>
@@ -593,15 +589,14 @@ if today_hours:
 
 # ── Tomorrow at a glance ──
 if tmr_temp is not None:
-    tmr_emoji        = WMO_EMOJI.get(tmr_wcode, "🌤")
-    tmr_label        = WMO_CODES.get(tmr_wcode, "—")
-    tmr_summary_text = tomorrow_verdict(tmr_feels, tmr_wind, tmr_wcode, tmr_precip_p)
+    tmr_emoji        = condition_emoji(tmr_condition_code)
+    tmr_summary_text = tomorrow_verdict(tmr_feels, tmr_wind, tmr_condition, tmr_precip_p)
     st.markdown('<div class="section-label">Tomorrow</div>', unsafe_allow_html=True)
     st.markdown(f"""
     <div class="tomorrow-card">
         <div class="tomorrow-left">
             <div class="tomorrow-date">{tomorrow.strftime("%A, %B %d")}</div>
-            <div class="tomorrow-summary">{tmr_emoji} {tmr_label}</div>
+            <div class="tomorrow-summary">{tmr_emoji} {tmr_condition}</div>
             <div class="tomorrow-detail">{tmr_summary_text}</div>
         </div>
         <div class="tomorrow-right">
