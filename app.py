@@ -12,11 +12,10 @@ st.set_page_config(
     layout="centered"
 )
 
-# ─── Auto-refresh every 10 minutes ──────────────────────────────────────────────
-st_autorefresh = None
+# ─── Auto-refresh every 15 minutes ──────────────────────────────────────────────
 try:
     from streamlit_autorefresh import st_autorefresh
-    st_autorefresh(interval=10 * 60 * 1000, key="autorefresh")
+    st_autorefresh(interval=15 * 60 * 1000, key="autorefresh")
 except ImportError:
     pass
 
@@ -169,7 +168,6 @@ html, body, [class*="css"] {
     margin-top: 0.5rem;
 }
 
-/* Best time bar */
 .hourly-grid {
     display: flex;
     gap: 4px;
@@ -178,21 +176,12 @@ html, body, [class*="css"] {
     height: 48px;
 }
 .hour-bar-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; }
-.hour-bar {
-    width: 100%;
-    border-radius: 3px 3px 0 0;
-    min-height: 4px;
-}
+.hour-bar { width: 100%; border-radius: 3px 3px 0 0; min-height: 4px; }
 .hour-label { font-size: 0.6rem; color: #aaa; white-space: nowrap; }
 .hour-label-bold { font-size: 0.6rem; color: #1c1c1c; font-weight: 600; white-space: nowrap; }
-.best-window-note {
-    font-size: 0.8rem;
-    color: #555;
-    margin-top: 0.4rem;
-}
+.best-window-note { font-size: 0.8rem; color: #555; margin-top: 0.4rem; }
 .best-window-highlight { font-weight: 600; color: #1c1c1c; }
 
-/* Tomorrow card */
 .tomorrow-card {
     background: #ffffff;
     border: 1px solid #ebebeb;
@@ -211,12 +200,7 @@ html, body, [class*="css"] {
 .tomorrow-temp { font-size: 2rem; font-weight: 700; color: #1c1c1c; line-height: 1; }
 .tomorrow-temp-sub { font-size: 0.75rem; color: #bbb; }
 
-/* Sunset row */
-.sunset-row {
-    display: flex;
-    gap: 1rem;
-    margin-bottom: 1.5rem;
-}
+.sunset-row { display: flex; gap: 1rem; margin-bottom: 1.5rem; }
 .sunset-card {
     flex: 1;
     background: #ffffff;
@@ -270,30 +254,33 @@ solpos    = solarposition.get_solarposition(pd.Timestamp(now_boston), LAT, LON)
 elevation = float(solpos['apparent_elevation'].iloc[0])
 azimuth   = float(solpos['azimuth'].iloc[0])
 
-# ─── Sunset / Sunrise calculation ────────────────────────────────────────────────
+# ─── Sunset / Sunrise ────────────────────────────────────────────────────────────
 def get_sun_times(date):
     times = pd.date_range(
         start=BOSTON_TZ.localize(datetime(date.year, date.month, date.day, 4, 0)),
         end=BOSTON_TZ.localize(datetime(date.year, date.month, date.day, 22, 0)),
         freq='1min'
     )
-    sp = solarposition.get_solarposition(times, LAT, LON)
+    sp   = solarposition.get_solarposition(times, LAT, LON)
     elev = sp['apparent_elevation']
-    sunrise = times[elev > 0][0] if (elev > 0).any() else None
+    sunrise = times[elev > 0][0]  if (elev > 0).any() else None
     sunset  = times[elev > 0][-1] if (elev > 0).any() else None
     return sunrise, sunset
 
 sunrise_today, sunset_today = get_sun_times(today)
-sunrise_tmr,   sunset_tmr   = get_sun_times(tomorrow)
-
 sunrise_str = sunrise_today.strftime("%-I:%M %p") if sunrise_today else "—"
 sunset_str  = sunset_today.strftime("%-I:%M %p")  if sunset_today  else "—"
+daylight_str = (
+    f"{int((sunset_today - sunrise_today).seconds // 3600)}h "
+    f"{int((sunset_today - sunrise_today).seconds % 3600 // 60)}m"
+    if sunrise_today and sunset_today else "—"
+)
 
-# ─── Weather Fetch (current + hourly + daily) ────────────────────────────────────
+# ─── Weather Fetch ────────────────────────────────────────────────────────────────
 debug_info = {}
 api_ok = False
 
-weather_url = (
+WEATHER_URL = (
     "https://api.open-meteo.com/v1/forecast"
     f"?latitude={LAT}&longitude={LON}"
     "&current=temperature_2m,apparent_temperature,relative_humidity_2m,"
@@ -301,53 +288,57 @@ weather_url = (
     "weather_code,precipitation,uv_index"
     "&hourly=apparent_temperature,wind_speed_10m,cloud_cover,direct_radiation,precipitation_probability"
     "&daily=temperature_2m_max,apparent_temperature_max,weather_code,"
-    "wind_speed_10m_max,precipitation_probability_max,sunrise,sunset"
+    "wind_speed_10m_max,precipitation_probability_max"
     "&temperature_unit=fahrenheit"
     "&wind_speed_unit=mph"
     "&timezone=America%2FNew_York"
     "&forecast_days=2"
 )
 
-try:
-    r = requests.get(weather_url, timeout=8, verify=False)
-    debug_info['http_status'] = r.status_code
-    if r.status_code == 200:
-        data = r.json()
-        cur  = data['current']
-
-        air_temp        = cur['temperature_2m']
-        feels_like      = cur['apparent_temperature']
-        humidity        = cur['relative_humidity_2m']
-        cloud_cover     = cur['cloud_cover']
-        wind_speed      = cur['wind_speed_10m']
-        wind_gusts      = cur['wind_gusts_10m']
-        direct_rad      = cur.get('direct_radiation', 0)
-        weather_code    = cur.get('weather_code', 0)
-        precipitation   = cur.get('precipitation', 0)
-        uv_index        = cur.get('uv_index', None)
-        condition_label = WMO_CODES.get(weather_code, "—")
-        api_ok = True
-        debug_info['raw'] = {k: cur[k] for k in cur}
-
-        # Hourly data for "best time today"
-        hourly      = data.get('hourly', {})
-        h_times     = hourly.get('time', [])
-        h_feels     = hourly.get('apparent_temperature', [])
-        h_wind      = hourly.get('wind_speed_10m', [])
-        h_clouds    = hourly.get('cloud_cover', [])
-        h_rad       = hourly.get('direct_radiation', [])
-        h_precip_p  = hourly.get('precipitation_probability', [])
-
-        # Daily data for tomorrow
-        daily       = data.get('daily', {})
-        d_dates     = daily.get('time', [])
-        d_max_temp  = daily.get('temperature_2m_max', [])
-        d_feels_max = daily.get('apparent_temperature_max', [])
-        d_wcode     = daily.get('weather_code', [])
-        d_wind_max  = daily.get('wind_speed_10m_max', [])
-        d_precip_p  = daily.get('precipitation_probability_max', [])
-    else:
+@st.cache_data(ttl=600)
+def fetch_weather(url):
+    r = requests.get(url, timeout=8, verify=False)
+    if r.status_code == 429:
+        raise ValueError("Rate limited (429) — try again in a few minutes.")
+    if r.status_code != 200:
         raise ValueError(f"HTTP {r.status_code}")
+    return r.json()
+
+try:
+    data = fetch_weather(WEATHER_URL)
+    cur  = data['current']
+
+    air_temp        = cur['temperature_2m']
+    feels_like      = cur['apparent_temperature']
+    humidity        = cur['relative_humidity_2m']
+    cloud_cover     = cur['cloud_cover']
+    wind_speed      = cur['wind_speed_10m']
+    wind_gusts      = cur['wind_gusts_10m']
+    direct_rad      = cur.get('direct_radiation', 0)
+    weather_code    = cur.get('weather_code', 0)
+    precipitation   = cur.get('precipitation', 0)
+    uv_index        = cur.get('uv_index', None)
+    condition_label = WMO_CODES.get(weather_code, "—")
+    api_ok = True
+    debug_info['http_status'] = 200
+    debug_info['raw'] = {k: cur[k] for k in cur}
+
+    hourly     = data.get('hourly', {})
+    h_times    = hourly.get('time', [])
+    h_feels    = hourly.get('apparent_temperature', [])
+    h_wind     = hourly.get('wind_speed_10m', [])
+    h_clouds   = hourly.get('cloud_cover', [])
+    h_rad      = hourly.get('direct_radiation', [])
+    h_precip_p = hourly.get('precipitation_probability', [])
+
+    daily       = data.get('daily', {})
+    d_dates     = daily.get('time', [])
+    d_max_temp  = daily.get('temperature_2m_max', [])
+    d_feels_max = daily.get('apparent_temperature_max', [])
+    d_wcode     = daily.get('weather_code', [])
+    d_wind_max  = daily.get('wind_speed_10m_max', [])
+    d_precip_p  = daily.get('precipitation_probability_max', [])
+
 except Exception as e:
     debug_info['exception'] = str(e)
     air_temp, feels_like, humidity = 68.0, 66.0, 55
@@ -379,7 +370,7 @@ if sun_coverage > 60 and direct_rad > 400 and wind_speed < 12 and cloud_cover < 
     boost = 5.0 * (sun_coverage / 100.0) * max(0.0, (12 - wind_speed) / 12)
     display_feels = feels_like + boost
 
-# ─── Terrace score (0-100) for hourly ranking ────────────────────────────────────
+# ─── Terrace score for hourly ranking ────────────────────────────────────────────
 def terrace_score(feels, wind, clouds, rad, precip_p):
     if precip_p > 40 or clouds > 80:
         return 0
@@ -405,20 +396,16 @@ for i, t_str in enumerate(h_times):
     if t.hour < 7 or t.hour > 20:
         continue
     score = terrace_score(
-        h_feels[i] if i < len(h_feels) else 70,
-        h_wind[i]  if i < len(h_wind)  else 10,
-        h_clouds[i] if i < len(h_clouds) else 30,
-        h_rad[i]   if i < len(h_rad)   else 200,
+        h_feels[i]    if i < len(h_feels)    else 70,
+        h_wind[i]     if i < len(h_wind)     else 10,
+        h_clouds[i]   if i < len(h_clouds)   else 30,
+        h_rad[i]      if i < len(h_rad)      else 200,
         h_precip_p[i] if i < len(h_precip_p) else 0,
     )
-    today_hours.append({
-        'time': t,
-        'score': score,
-        'feels': h_feels[i] if i < len(h_feels) else 70,
-        'wind':  h_wind[i]  if i < len(h_wind)  else 10,
-    })
+    today_hours.append({'time': t, 'score': score,
+                        'feels': h_feels[i] if i < len(h_feels) else 70,
+                        'wind':  h_wind[i]  if i < len(h_wind)  else 10})
 
-# Best 2-hour window
 best_window_start = None
 best_window_score = -1
 for j in range(len(today_hours) - 1):
@@ -432,11 +419,11 @@ tmr_temp = tmr_feels = tmr_wind = tmr_wcode = tmr_precip_p = None
 tmr_str = tomorrow.strftime("%Y-%m-%d")
 for i, d in enumerate(d_dates):
     if d == tmr_str:
-        tmr_temp     = d_max_temp[i]    if i < len(d_max_temp)    else None
-        tmr_feels    = d_feels_max[i]   if i < len(d_feels_max)   else None
-        tmr_wind     = d_wind_max[i]    if i < len(d_wind_max)    else None
-        tmr_wcode    = d_wcode[i]       if i < len(d_wcode)       else 0
-        tmr_precip_p = d_precip_p[i]   if i < len(d_precip_p)    else 0
+        tmr_temp     = d_max_temp[i]  if i < len(d_max_temp)  else None
+        tmr_feels    = d_feels_max[i] if i < len(d_feels_max) else None
+        tmr_wind     = d_wind_max[i]  if i < len(d_wind_max)  else None
+        tmr_wcode    = d_wcode[i]     if i < len(d_wcode)     else 0
+        tmr_precip_p = d_precip_p[i]  if i < len(d_precip_p)  else 0
         break
 
 def tomorrow_verdict(feels, wind, wcode, precip_p):
@@ -491,7 +478,7 @@ st.markdown(
 
 if not api_ok:
     st.markdown(
-        '<div class="api-warn">⚠️ Live data stream interrupted — showing estimated values.</div>',
+        '<div class="api-warn">⚠️ Live data stream interrupted — showing estimated values. See debug panel below.</div>',
         unsafe_allow_html=True
     )
 
@@ -550,7 +537,7 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# ── Sunset / Sunrise ──
+# ── Sunrise / Sunset ──
 st.markdown('<div class="section-label">Today\'s Sun</div>', unsafe_allow_html=True)
 st.markdown(f"""
 <div class="sunset-row">
@@ -564,10 +551,7 @@ st.markdown(f"""
     </div>
     <div class="sunset-card">
         <div class="sunset-card-label">⏱ Daylight</div>
-        <div class="sunset-card-value">{
-            f"{int((sunset_today - sunrise_today).seconds // 3600)}h {int((sunset_today - sunrise_today).seconds % 3600 // 60)}m"
-            if sunrise_today and sunset_today else "—"
-        }</div>
+        <div class="sunset-card-value">{daylight_str}</div>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -579,21 +563,26 @@ if today_hours:
 
     bars_html = ""
     for h in today_hours:
-        pct = int((h['score'] / max_score) * 100)
-        is_best = best_window_start and h['time'] == best_window_start
-        bar_bg = "#f5a623" if h['score'] > 60 else ("#c8d8e8" if h['score'] > 20 else "#ebebeb")
-        label_class = "hour-label-bold" if is_best else "hour-label"
-        label = h['time'].strftime("%-I%p").lower()
+        pct      = int((h['score'] / max_score) * 100)
+        is_best  = best_window_start and h['time'] == best_window_start
+        bar_bg   = "#f5a623" if h['score'] > 60 else ("#c8d8e8" if h['score'] > 20 else "#ebebeb")
+        lbl_cls  = "hour-label-bold" if is_best else "hour-label"
+        label    = h['time'].strftime("%-I%p").lower()
         bars_html += f"""
         <div class="hour-bar-wrap">
-            <div class="hour-bar" style="height:{max(4, pct//2)}px; background:{bar_bg};"></div>
-            <div class="{label_class}">{label}</div>
+            <div class="hour-bar" style="height:{max(4, pct // 2)}px; background:{bar_bg};"></div>
+            <div class="{lbl_cls}">{label}</div>
         </div>"""
 
     best_note = ""
     if best_window_start:
-        best_end = best_window_start + timedelta(hours=2)
-        best_note = f'<div class="best-window-note">Best window: <span class="best-window-highlight">{best_window_start.strftime("%-I:%M %p")} – {best_end.strftime("%-I:%M %p")}</span></div>'
+        best_end  = best_window_start + timedelta(hours=2)
+        best_note = (
+            f'<div class="best-window-note">Best window: '
+            f'<span class="best-window-highlight">'
+            f'{best_window_start.strftime("%-I:%M %p")} – {best_end.strftime("%-I:%M %p")}'
+            f'</span></div>'
+        )
 
     st.markdown(f"""
     <div style="background:#ffffff; border:1px solid #ebebeb; border-radius:14px; padding:1.25rem 1.1rem; margin-bottom:1.5rem;">
@@ -604,8 +593,8 @@ if today_hours:
 
 # ── Tomorrow at a glance ──
 if tmr_temp is not None:
-    tmr_emoji = WMO_EMOJI.get(tmr_wcode, "🌤")
-    tmr_label = WMO_CODES.get(tmr_wcode, "—")
+    tmr_emoji        = WMO_EMOJI.get(tmr_wcode, "🌤")
+    tmr_label        = WMO_CODES.get(tmr_wcode, "—")
     tmr_summary_text = tomorrow_verdict(tmr_feels, tmr_wind, tmr_wcode, tmr_precip_p)
     st.markdown('<div class="section-label">Tomorrow</div>', unsafe_allow_html=True)
     st.markdown(f"""
@@ -624,7 +613,7 @@ if tmr_temp is not None:
 
 # ── Refresh note ──
 st.markdown(
-    f'<div class="refresh-note">Auto-refreshes every 10 min · Last update: {now_boston.strftime("%I:%M %p")}</div>',
+    f'<div class="refresh-note">Auto-refreshes every 15 min · Last update: {now_boston.strftime("%I:%M %p")}</div>',
     unsafe_allow_html=True
 )
 
