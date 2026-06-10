@@ -365,12 +365,27 @@ def calc_sun_coverage(elev, az, rad):
     if elev <= 0:
         return 0.0
     rad_pct = min(100.0, (rad / 800.0) * 100.0)
-    if 180 <= az <= 230:
-        geo = 0.6 if elev < 40 else 1.0
+
+    # 225 Franklin tower blocks east/southeast (azimuth 70–140°)
+    # 477ft tower seen from 5th floor (~50ft) requires ~75° elevation to clear at close range
+    if 70 <= az <= 140:
+        if elev < 75:
+            geo = 0.0   # Completely blocked by 225 Franklin
+        else:
+            geo = 1.0
+
+    # South/Southwest — partially blocked by nearby towers
+    elif 140 < az <= 230:
+        geo = 0.5 if elev < 40 else 1.0
+
+    # West — One Federal St shadow zone
     elif 230 < az <= 300:
         geo = 0.0 if elev < 30 else min(1.0, (elev - 30) / 30)
+
+    # Northwest/North — generally open
     else:
-        geo = 1.0 if elev >= 15 else elev / 15
+        geo = 1.0 if elev >= 20 else elev / 20
+
     return max(0.0, min(100.0, rad_pct * geo))
 
 sun_coverage = calc_sun_coverage(elevation, azimuth, direct_rad)
