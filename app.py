@@ -366,32 +366,26 @@ def calc_sun_coverage(elev, az, rad):
         return 0.0
     rad_pct = min(100.0, (rad / 800.0) * 100.0)
 
-# 225 Franklin tower blocks east/southeast
-# Full block in the core shadow zone (az 80–125°)
-# Partial block at the edges as sun starts clearing
-if 80 <= az <= 125:
-    geo = 0.0 if elev < 75 else 1.0
-elif 125 < az <= 145:
-    # Transition zone — sun creeping past tower edge
-    geo = min(1.0, (az - 125) / 20 * 0.4)  # max 40% at edge
-elif 70 <= az < 80:
-    geo = 0.0 if elev < 60 else 0.5
-
-    # South/Southwest — partially blocked by nearby towers
-    elif 140 < az <= 230:
+    if 80 <= az <= 125:
+        # Core shadow zone — 225 Franklin tower fully blocks
+        geo = 0.0 if elev < 75 else 1.0
+    elif 125 < az <= 145:
+        # Transition zone — sun creeping past tower edge
+        geo = min(1.0, (az - 125) / 20 * 0.4)
+    elif 70 <= az < 80:
+        # Early morning east — still mostly blocked
+        geo = 0.0 if elev < 60 else 0.5
+    elif 145 < az <= 230:
+        # South/Southwest — partially blocked by nearby towers
         geo = 0.5 if elev < 40 else 1.0
-
-    # West — One Federal St shadow zone
     elif 230 < az <= 300:
+        # West — One Federal St shadow zone
         geo = 0.0 if elev < 30 else min(1.0, (elev - 30) / 30)
-
-    # Northwest/North — generally open
     else:
+        # Northwest/North — generally open
         geo = 1.0 if elev >= 20 else elev / 20
 
     return max(0.0, min(100.0, rad_pct * geo))
-
-sun_coverage = calc_sun_coverage(elevation, azimuth, direct_rad)
 
 # ─── Feels Like with radiant boost ───────────────────────────────────────────────
 display_feels = feels_like
