@@ -367,24 +367,19 @@ def calc_sun_coverage(elev, az, rad):
     rad_pct = min(100.0, (rad / 800.0) * 100.0)
 
     if 80 <= az <= 125:
-        # Core shadow zone — 225 Franklin tower fully blocks
         geo = 0.0 if elev < 75 else 1.0
     elif 125 < az <= 145:
-        # Transition zone — sun creeping past tower edge
         geo = min(1.0, (az - 125) / 20 * 0.4)
     elif 70 <= az < 80:
-        # Early morning east — still mostly blocked
         geo = 0.0 if elev < 60 else 0.5
     elif 145 < az <= 230:
-        # South/Southwest — partially blocked by nearby towers
         geo = 0.5 if elev < 40 else 1.0
     elif 230 < az <= 300:
-        # West — One Federal St shadow zone
         geo = 0.0 if elev < 30 else min(1.0, (elev - 30) / 30)
     else:
-        # Northwest/North — generally open
         geo = 1.0 if elev >= 20 else elev / 20
 
+    geo = geo if geo is not None else 0.0
     return max(0.0, min(100.0, rad_pct * geo))
 
 # ─── Feels Like with radiant boost ───────────────────────────────────────────────
