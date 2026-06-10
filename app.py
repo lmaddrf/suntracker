@@ -366,13 +366,16 @@ def calc_sun_coverage(elev, az, rad):
         return 0.0
     rad_pct = min(100.0, (rad / 800.0) * 100.0)
 
-    # 225 Franklin tower blocks east/southeast (azimuth 70–140°)
-    # 477ft tower seen from 5th floor (~50ft) requires ~75° elevation to clear at close range
-    if 70 <= az <= 140:
-        if elev < 75:
-            geo = 0.0   # Completely blocked by 225 Franklin
-        else:
-            geo = 1.0
+# 225 Franklin tower blocks east/southeast
+# Full block in the core shadow zone (az 80–125°)
+# Partial block at the edges as sun starts clearing
+if 80 <= az <= 125:
+    geo = 0.0 if elev < 75 else 1.0
+elif 125 < az <= 145:
+    # Transition zone — sun creeping past tower edge
+    geo = min(1.0, (az - 125) / 20 * 0.4)  # max 40% at edge
+elif 70 <= az < 80:
+    geo = 0.0 if elev < 60 else 0.5
 
     # South/Southwest — partially blocked by nearby towers
     elif 140 < az <= 230:
