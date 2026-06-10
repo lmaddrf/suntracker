@@ -290,7 +290,10 @@ try:
     cloud_cover     = cur['cloud']
     wind_speed      = cur['wind_mph']
     wind_gusts      = cur['gust_mph']
-    direct_rad      = cur.get('solar_w_per_m2', cur.get('vis_miles', 0) * 50)
+    raw_rad = cur.get('solar_w_per_m2', 0)
+# If radiation reads low on a clear day, estimate from cloud cover and sun elevation
+estimated_rad = max(0, (1 - cloud_cover / 100) * 800 * max(0, elevation / 90))
+direct_rad = max(raw_rad, estimated_rad)
     uv_index        = cur.get('uv', None)
     precipitation   = cur.get('precip_mm', 0)
     condition_label = cur['condition']['text']
