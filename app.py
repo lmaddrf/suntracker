@@ -290,10 +290,7 @@ try:
     cloud_cover     = cur['cloud']
     wind_speed      = cur['wind_mph']
     wind_gusts      = cur['gust_mph']
-    raw_rad = cur.get('solar_w_per_m2', 0)
-# If radiation reads low on a clear day, estimate from cloud cover and sun elevation
-estimated_rad = max(0, (1 - cloud_cover / 100) * 800 * max(0, elevation / 90))
-direct_rad = max(raw_rad, estimated_rad)
+    direct_rad = cur.get('solar_w_per_m2', 0)
     uv_index        = cur.get('uv', None)
     precipitation   = cur.get('precip_mm', 0)
     condition_label = cur['condition']['text']
@@ -388,6 +385,11 @@ def calc_sun_coverage(elev, az, rad):
         geo = 0.0
 
     return max(0.0, min(100.0, rad_pct * geo))
+    raw_rad = direct_rad
+estimated_rad = max(0, (1 - cloud_cover / 100) * 800 * max(0, elevation / 90))
+direct_rad = max(raw_rad, estimated_rad)
+
+sun_coverage = calc_sun_coverage(elevation, azimuth, direct_rad)
 sun_coverage = calc_sun_coverage(elevation, azimuth, direct_rad)
 
 # ─── Feels Like with radiant boost ───────────────────────────────────────────────
