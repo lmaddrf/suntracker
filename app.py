@@ -366,7 +366,7 @@ def calc_sun_coverage(elev, az, rad):
         return 0.0
     rad_pct = min(100.0, (rad / 800.0) * 100.0)
 
-    if 80 <= az <= 125:
+    if 85 <= az <= 112:
         geo = 0.0 if elev < 75 else 1.0
     elif 125 < az <= 145:
         geo = min(1.0, (az - 125) / 20 * 0.4)
