@@ -369,7 +369,7 @@ def calc_sun_coverage(elev, az, rad):
     if 85 <= az <= 112:
         geo = 0.0 if elev < 75 else 1.0
     elif 125 < az <= 145:
-        geo = min(1.0, (az - 125) / 20 * 0.4)
+        geo = min(1.0, (az - 112) / 20 * 0.15)
     elif 70 <= az < 80:
         geo = 0.0 if elev < 60 else 0.5
     elif 145 < az <= 230:
