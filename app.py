@@ -338,7 +338,7 @@ except Exception as e:
 # UV index is more reliable than cloud_cover — use it to correct bad cloud readings
 if uv_index is not None and uv_index > 5:
     # High UV means it's actually sunny — estimate cloud cover from UV
-    uv_cloud_cover = max(0, 100 - (uv_index / 11 * 100))
+    uv_cloud_cover = max(0, 100 - (uv_index / 11 * 180))
     effective_cloud = min(cloud_cover, uv_cloud_cover)
 else:
     effective_cloud = cloud_cover
