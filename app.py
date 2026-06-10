@@ -335,7 +335,14 @@ except Exception as e:
     tmr_condition_code = 1000
 
 # ─── Radiation estimate (WeatherAPI solar field is unreliable) ───────────────────
-estimated_rad = max(0, (1 - cloud_cover / 100) * 800 * max(0, elevation / 90))
+# UV index is more reliable than cloud_cover — use it to correct bad cloud readings
+if uv_index is not None and uv_index > 5:
+    # High UV means it's actually sunny — estimate cloud cover from UV
+    uv_cloud_cover = max(0, 100 - (uv_index / 11 * 100))
+    effective_cloud = min(cloud_cover, uv_cloud_cover)
+else:
+    effective_cloud = cloud_cover
+estimated_rad = max(0, (1 - effective_cloud / 100) * 800 * max(0, elevation / 90))
 direct_rad    = max(direct_rad, estimated_rad)
 
 # ─── Sun Coverage ────────────────────────────────────────────────────────────────
