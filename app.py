@@ -381,6 +381,7 @@ def calc_sun_coverage(elev, az, rad):
 
     geo = geo if geo is not None else 0.0
     return max(0.0, min(100.0, rad_pct * geo))
+sun_coverage = calc_sun_coverage(elevation, azimuth, direct_rad)
 
 # ─── Feels Like with radiant boost ───────────────────────────────────────────────
 display_feels = feels_like
