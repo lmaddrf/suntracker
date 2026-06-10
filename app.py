@@ -374,7 +374,7 @@ def calc_sun_coverage(elev, az, rad):
         geo = 0.0 if elev < 75 else 1.0
     elif 112 <= az < 145:
         # Transition zone — sun creeping past tower edge
-        geo = min(0.5, (az - 112) / 25 * 0.5)
+        geo = min(0.6, (az - 112) / 22 * 0.6)
     elif 145 <= az <= 230:
         # South/Southwest — partially blocked by nearby towers
         geo = 0.5 if elev < 40 else 1.0
