@@ -264,12 +264,6 @@ API_KEY = st.secrets["WEATHERAPI_KEY"]
 
 @st.cache_data(ttl=600)
 def fetch_weather(api_key):
-    # Current conditions
-    current_url = (
-        f"https://api.weatherapi.com/v1/current.json"
-        f"?key={api_key}&q={LAT},{LON}&aqi=no"
-    )
-    # Forecast (2 days for tomorrow)
     forecast_url = (
         f"https://api.weatherapi.com/v1/forecast.json"
         f"?key={api_key}&q={LAT},{LON}&days=2&aqi=no&alerts=no"
@@ -282,7 +276,6 @@ def fetch_weather(api_key):
 try:
     data = fetch_weather(API_KEY)
     cur  = data['current']
-    loc  = data['location']
 
     air_temp        = cur['temp_f']
     feels_like      = cur['feelslike_f']
@@ -290,7 +283,7 @@ try:
     cloud_cover     = cur['cloud']
     wind_speed      = cur['wind_mph']
     wind_gusts      = cur['gust_mph']
-    direct_rad = cur.get('solar_w_per_m2', 0)
+    direct_rad      = cur.get('solar_w_per_m2', 0)
     uv_index        = cur.get('uv', None)
     precipitation   = cur.get('precip_mm', 0)
     condition_label = cur['condition']['text']
@@ -302,12 +295,11 @@ try:
         'humidity': humidity, 'cloud_cover': cloud_cover,
         'wind_speed': wind_speed, 'wind_gusts': wind_gusts,
         'uv_index': uv_index, 'precipitation': precipitation,
-        'condition': condition_label,
+        'condition': condition_label, 'direct_rad': direct_rad,
     }
 
-    # Hourly data for today
     forecast_days = data.get('forecast', {}).get('forecastday', [])
-    today_fc  = forecast_days[0] if len(forecast_days) > 0 else None
+    today_fc    = forecast_days[0] if len(forecast_days) > 0 else None
     tomorrow_fc = forecast_days[1] if len(forecast_days) > 1 else None
 
     today_hourly = today_fc['hour'] if today_fc else []
@@ -318,15 +310,14 @@ try:
     h_rad      = [h.get('solar_w_per_m2', (100 - h['cloud']) * 6) for h in today_hourly]
     h_precip_p = [h.get('chance_of_rain', 0) for h in today_hourly]
 
-    # Tomorrow
     if tomorrow_fc:
         td = tomorrow_fc['day']
-        tmr_temp     = td['maxtemp_f']
-        tmr_feels    = td['avgtemp_f']
-        tmr_wind     = td['maxwind_mph']
-        tmr_condition = td['condition']['text']
+        tmr_temp          = td['maxtemp_f']
+        tmr_feels         = td['avgtemp_f']
+        tmr_wind          = td['maxwind_mph']
+        tmr_condition     = td['condition']['text']
         tmr_condition_code = td['condition']['code']
-        tmr_precip_p = td.get('daily_chance_of_rain', 0)
+        tmr_precip_p      = td.get('daily_chance_of_rain', 0)
     else:
         tmr_temp = tmr_feels = tmr_wind = tmr_condition = tmr_precip_p = None
         tmr_condition_code = 1000
@@ -335,12 +326,51 @@ except Exception as e:
     debug_info['exception'] = str(e)
     air_temp, feels_like, humidity = 68.0, 66.0, 55
     cloud_cover, wind_speed, wind_gusts = 25, 8.0, 12.0
-    direct_rad, precipitation = 350, 0
+    direct_rad, precipitation = 0, 0
     uv_index = None
     condition_label = "Unknown"
+    condition_code = 1000
     h_times = h_feels = h_wind = h_clouds = h_rad = h_precip_p = []
     tmr_temp = tmr_feels = tmr_wind = tmr_condition = tmr_precip_p = None
     tmr_condition_code = 1000
+
+# ─── Radiation estimate (WeatherAPI solar field is unreliable) ───────────────────
+estimated_rad = max(0, (1 - cloud_cover / 100) * 800 * max(0, elevation / 90))
+direct_rad    = max(direct_rad, estimated_rad)
+
+# ─── Sun Coverage ────────────────────────────────────────────────────────────────
+def calc_sun_coverage(elev, az, rad):
+    if elev <= 0:
+        return 0.0
+    rad_pct = min(100.0, (rad / 800.0) * 100.0)
+
+    if az < 85 or az > 300:
+        # Early morning or night angles — generally open
+        geo = 1.0 if elev >= 20 else elev / 20
+    elif 85 <= az < 112:
+        # Core shadow zone — 225 Franklin tower fully blocks
+        geo = 0.0 if elev < 75 else 1.0
+    elif 112 <= az < 145:
+        # Transition zone — sun creeping past tower edge
+        geo = min(0.9, (az - 112) / 10 * 0.9)
+    elif 145 <= az <= 230:
+        # South/Southwest — partially blocked by nearby towers
+        geo = 0.5 if elev < 40 else 1.0
+    elif 230 < az <= 300:
+        # West — One Federal St shadow zone
+        geo = 0.0 if elev < 30 else min(1.0, (elev - 30) / 30)
+    else:
+        geo = 0.0
+
+    return max(0.0, min(100.0, rad_pct * geo))
+
+sun_coverage = calc_sun_coverage(elevation, azimuth, direct_rad)
+
+# ─── Feels Like with radiant boost ───────────────────────────────────────────────
+display_feels = feels_like
+if sun_coverage > 60 and direct_rad > 400 and wind_speed < 12 and cloud_cover < 30:
+    boost = 5.0 * (sun_coverage / 100.0) * max(0.0, (12 - wind_speed) / 12)
+    display_feels = feels_like + boost
 
 # ─── WeatherAPI condition code → emoji ───────────────────────────────────────────
 def condition_emoji(code):
@@ -359,44 +389,6 @@ def condition_emoji(code):
     if code in snow:    return "❄️"
     if code in thunder: return "⛈"
     return "🌤"
-
-# ─── Sun Coverage ────────────────────────────────────────────────────────────────
-def calc_sun_coverage(elev, az, rad):
-    if elev <= 0:
-        return 0.0
-    rad_pct = min(100.0, (rad / 800.0) * 100.0)
-
-    if az < 85 or az > 300:
-        # Early morning or night angles — generally open
-        geo = 1.0 if elev >= 20 else elev / 20
-    elif 85 <= az < 112:
-        # Core shadow zone — 225 Franklin tower fully blocks
-        geo = 0.0 if elev < 75 else 1.0
-    elif 112 <= az < 145:
-        # Transition zone — sun creeping past tower edge
-       geo = min(0.8, (az - 112) / 10 * 0.8)
-    elif 145 <= az <= 230:
-        # South/Southwest — partially blocked by nearby towers
-        geo = 0.5 if elev < 40 else 1.0
-    elif 230 < az <= 300:
-        # West — One Federal St shadow zone
-        geo = 0.0 if elev < 30 else min(1.0, (elev - 30) / 30)
-    else:
-        geo = 0.0
-
-    return max(0.0, min(100.0, rad_pct * geo))
-    raw_rad = direct_rad
-estimated_rad = max(0, (1 - cloud_cover / 100) * 800 * max(0, elevation / 90))
-direct_rad = max(raw_rad, estimated_rad)
-
-sun_coverage = calc_sun_coverage(elevation, azimuth, direct_rad)
-sun_coverage = calc_sun_coverage(elevation, azimuth, direct_rad)
-
-# ─── Feels Like with radiant boost ───────────────────────────────────────────────
-display_feels = feels_like
-if sun_coverage > 60 and direct_rad > 400 and wind_speed < 12 and cloud_cover < 30:
-    boost = 5.0 * (sun_coverage / 100.0) * max(0.0, (12 - wind_speed) / 12)
-    display_feels = feels_like + boost
 
 # ─── Terrace score for hourly ranking ────────────────────────────────────────────
 def terrace_score(feels, wind, clouds, rad, precip_p):
